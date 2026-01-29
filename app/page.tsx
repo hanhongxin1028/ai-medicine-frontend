@@ -166,6 +166,7 @@ interface SidebarProps {
     onSelectSession: (id: string) => void;
     onRenameSession: (id: string) => void;
     onDeleteSession: (id: string) => void;
+    onNewChat: () => void;
 }
 
 const Sidebar = ({ 
@@ -175,7 +176,8 @@ const Sidebar = ({
     activeSessionId, 
     onSelectSession,
     onRenameSession,
-    onDeleteSession
+    onDeleteSession,
+    onNewChat
 }: SidebarProps) => {
     const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
@@ -214,7 +216,10 @@ const Sidebar = ({
 
             {/* New Chat Button */}
             <div className="px-4 mb-6 mt-4">
-                <button className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-white hover:bg-gray-50 text-blue-600 font-medium text-sm rounded-xl border border-gray-200 shadow-sm transition-all hover:shadow">
+                <button 
+                    onClick={onNewChat}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-white hover:bg-gray-50 text-blue-600 font-medium text-sm rounded-xl border border-gray-200 shadow-sm transition-all hover:shadow"
+                >
                     <SquarePen size={18} />
                     <span>发起新对话</span>
                 </button>
@@ -390,6 +395,17 @@ export default function ChatPage() {
     setDeleteSessionId(null);
   };
 
+  const handleNewChat = () => {
+    const newSessionId = Date.now().toString();
+    const newSession: ChatSession = {
+        id: newSessionId,
+        title: '新对话',
+        group: '今天'
+    };
+    setSessions(prev => [newSession, ...prev]);
+    setActiveSessionId(newSessionId);
+  };
+
   const handleImageSelect = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -455,14 +471,16 @@ export default function ChatPage() {
     setMessages((prev) => [...prev, newUserMsg]);
 
     const aiMsgId = (Date.now() + 1).toString();
-    setMessages((prev) => [...prev, { id: aiMsgId, role: 'assistant', content: '' }]);
+    // Do not add empty assistant message yet to prevent double avatar during loading
+    // setMessages((prev) => [...prev, { id: aiMsgId, role: 'assistant', content: '' }]);
 
     try {
       let uploadedFileId: string | null = null;
       if (currentImage) {
         uploadedFileId = await uploadImage(currentImage);
         if (!uploadedFileId) {
-          setMessages((prev) => prev.filter(m => m.id !== aiMsgId && m.id !== userMsgId));
+          // No AI message added yet, so just filter user message if needed
+          setMessages((prev) => prev.filter(m => m.id !== userMsgId));
           setInput(currentInput);
           setIsLoading(false);
           return;
@@ -503,11 +521,16 @@ export default function ChatPage() {
                     const data = JSON.parse(jsonStr);
                     if (data.event === 'message') {
                         aiContent += data.answer;
-                        setMessages((prev) =>
-                            prev.map((msg) =>
-                                msg.id === aiMsgId ? { ...msg, content: aiContent } : msg
-                            )
-                        );
+                        setMessages((prev) => {
+                            const exists = prev.some(m => m.id === aiMsgId);
+                            if (exists) {
+                                return prev.map((msg) =>
+                                    msg.id === aiMsgId ? { ...msg, content: aiContent } : msg
+                                );
+                            } else {
+                                return [...prev, { id: aiMsgId, role: 'assistant', content: aiContent }];
+                            }
+                        });
                     } else if (data.event === 'message_end' && data.metadata && data.metadata.retriever_resources) {
                          const resources = data.metadata.retriever_resources;
                          if (resources && resources.length > 0) {
@@ -552,6 +575,7 @@ export default function ChatPage() {
         onSelectSession={setActiveSessionId}
         onRenameSession={(id) => handleSessionAction('rename', id)}
         onDeleteSession={(id) => handleSessionAction('delete', id)}
+        onNewChat={handleNewChat}
       />
 
       {/* Main Content Area */}
@@ -609,7 +633,10 @@ export default function ChatPage() {
                              </div>
 
                         </div>
-                        <button className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 transition-colors ml-2">
+                        <button 
+                             onClick={handleNewChat}
+                             className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 transition-colors ml-2"
+                        >
                              <SquarePen size={18} />
                         </button>
                     </div>
@@ -632,7 +659,9 @@ export default function ChatPage() {
              </div>
              <span className="font-bold">AI药匣子</span>
            </div>
-           <button><SquarePen size={20} className="text-gray-500"/></button>
+           <button onClick={handleNewChat}>
+               <SquarePen size={20} className="text-gray-500"/>
+           </button>
         </div>
 
 
@@ -733,7 +762,7 @@ export default function ChatPage() {
                     </div>
                 ))}
 
-                {isLoading && (
+                {isLoading && messages[messages.length - 1]?.role !== 'assistant' && (
                     <div className="flex w-full justify-start items-start gap-4 animate-pulse">
                          <div className="flex-shrink-0 w-10 h-10 rounded-full bg-white flex items-center justify-center border border-gray-100 overflow-hidden shadow-sm">
                              <img src="/logo.jpg" alt="AI" className="w-full h-full object-cover" />
