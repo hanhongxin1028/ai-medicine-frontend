@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { query, files } = body;
+    const { query, files, conversation_id } = body;
 
     const difyApiKey = process.env.DIFY_API_KEY;
     const difyApiUrl = process.env.DIFY_API_URL;
@@ -18,7 +18,8 @@ export async function POST(request: NextRequest) {
       query: query || "",
       response_mode: "streaming",
       user: "web-user", 
-      files: files || []
+      files: files || [],
+      conversation_id: conversation_id || undefined,
     };
 
     const response = await fetch(`${difyApiUrl}/chat-messages`, {

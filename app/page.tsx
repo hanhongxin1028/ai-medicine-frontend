@@ -42,6 +42,7 @@ interface ChatSession {
     id: string;
     title: string;
     group: string; // e.g. '今天'
+    difyConversationId?: string;
 }
 
 // --- Components ---
@@ -455,6 +456,10 @@ export default function ChatPage() {
     const currentImage = selectedImage;
     const currentImagePreview = imagePreview;
 
+    // Get current session info
+    const currentSession = sessions.find(s => s.id === activeSessionId);
+    const conversationId = currentSession?.difyConversationId;
+
     setInput('');
     setSelectedImage(null);
     setImagePreview(null);
@@ -496,7 +501,11 @@ export default function ChatPage() {
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: currentInput || (currentImage ? "分析图片" : ""), files: filesPayload }),
+        body: JSON.stringify({ 
+            query: currentInput || (currentImage ? "分析图片" : ""), 
+            files: filesPayload,
+            conversation_id: conversationId 
+        }),
       });
 
       if (!response.ok) throw new Error(`Chat API Error: ${response.status}`);
@@ -506,6 +515,7 @@ export default function ChatPage() {
       const decoder = new TextDecoder();
       let done = false;
       let aiContent = '';
+      let conversationIdCaptured = false;
 
       while (!done) {
         const { value, done: doneReading } = await reader.read();
@@ -519,6 +529,15 @@ export default function ChatPage() {
                 if (jsonStr === '[DONE]') continue;
                 try {
                     const data = JSON.parse(jsonStr);
+
+                    // Capture conversation_id if available and not yet set
+                    if (data.conversation_id && activeSessionId && !conversationId && !conversationIdCaptured) {
+                        conversationIdCaptured = true;
+                        setSessions(prev => prev.map(s => 
+                            s.id === activeSessionId ? { ...s, difyConversationId: data.conversation_id } : s
+                        ));
+                    }
+
                     if (data.event === 'message') {
                         aiContent += data.answer;
                         setMessages((prev) => {
