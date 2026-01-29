@@ -12,6 +12,7 @@ import ReactMarkdown from 'react-markdown';
 // --- Types ---
 interface Citation {
   filename: string;
+  content?: string;
 }
 
 interface Message {
@@ -125,6 +126,36 @@ const DeleteModal = ({ isOpen, onClose, onConfirm }: { isOpen: boolean, onClose:
                 </button>
             </div>
         </Modal>
+    );
+};
+
+// Sidebar / Drawer for Citations
+const CitationDrawer = ({ isOpen, onClose, citation }: { isOpen: boolean, onClose: () => void, citation: Citation | null }) => {
+    if (!isOpen || !citation) return null;
+    return (
+        <div className="fixed inset-0 z-50 overflow-hidden">
+             <div className="absolute inset-0 bg-black/20 backdrop-blur-sm transition-opacity" onClick={onClose} />
+             <div className="absolute inset-y-0 right-0 max-w-lg w-full flex">
+                <div className="flex-1 bg-white shadow-2xl p-6 overflow-y-auto animate-in slide-in-from-right duration-300">
+                    <div className="flex items-center justify-between mb-6">
+                        <div className="flex items-center gap-2 text-blue-600">
+                            <FileText size={20} />
+                            <h3 className="text-lg font-bold text-gray-900 truncate flex-1" title={citation.filename}>
+                                {citation.filename}
+                            </h3>
+                        </div>
+                        <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full text-gray-500 transition-colors">
+                            <X size={20} />
+                        </button>
+                    </div>
+                    <div className="prose prose-slate max-w-none">
+                         <div className="p-4 bg-gray-50 rounded-xl border border-gray-100 text-gray-700 leading-relaxed font-mono text-sm whitespace-pre-wrap">
+                            {citation.content || "暂无内容"}
+                         </div>
+                    </div>
+                </div>
+             </div>
+        </div>
     );
 };
 
@@ -307,6 +338,7 @@ export default function ChatPage() {
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [activeCitation, setActiveCitation] = useState<Citation | null>(null);
   
   // Breadcrumb dropdown state
   const [isBreadcrumbMenuOpen, setIsBreadcrumbMenuOpen] = useState(false);
@@ -405,7 +437,8 @@ export default function ChatPage() {
                         // Assistant message
                         if (item.answer) {
                             const cites: Citation[] = item.retriever_resources?.map((r: any) => ({
-                                filename: r.dataset_name || '文档'
+                                filename: r.document_name || '文档',
+                                content: r.content
                             })) || [];
                             
                             history.push({
@@ -675,7 +708,8 @@ export default function ChatPage() {
                          const resources = data.metadata.retriever_resources;
                          if (resources && resources.length > 0) {
                              const cites = resources.map((r: any) => ({ 
-                                 filename: r.dataset_name || '文档' 
+                                 filename: r.document_name || '文档',
+                                 content: r.content
                              }));
                              setMessages((prev) =>
                                 prev.map((msg) =>
@@ -732,6 +766,11 @@ export default function ChatPage() {
             isOpen={!!deleteSessionId} 
             onClose={() => setDeleteSessionId(null)} 
             onConfirm={handleDeleteConfirm}
+        />
+        <CitationDrawer 
+            isOpen={!!activeCitation}
+            onClose={() => setActiveCitation(null)}
+            citation={activeCitation}
         />
 
         {/* Top Bar for Desktop - Different when collapsed/expanded */}
@@ -870,7 +909,11 @@ export default function ChatPage() {
                                              </div>
                                             <div className="flex flex-wrap gap-2">
                                                 {msg.citations.map((cite, idx) => (
-                                                    <div key={idx} className="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg border border-gray-200 hover:bg-white hover:shadow-sm transition-all cursor-pointer group/cite">
+                                                    <div 
+                                                        key={idx} 
+                                                        onClick={() => setActiveCitation(cite)}
+                                                        className="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg border border-gray-200 hover:bg-white hover:shadow-sm transition-all cursor-pointer group/cite"
+                                                    >
                                                         <div className="p-1 bg-gray-200 rounded text-gray-500 group-hover/cite:bg-blue-100 group-hover/cite:text-blue-600">
                                                             <FileText size={12} />
                                                         </div>
