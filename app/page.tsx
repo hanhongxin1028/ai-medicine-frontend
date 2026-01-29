@@ -752,29 +752,8 @@ export default function ChatPage() {
                                         </div>
                                     )}
 
-                                    {/* Action Bar */}
-                                    {!isLoading && msg.content && (
-                                       <div className="flex items-center gap-2 mt-4">
-                                           <div className="flex items-center bg-gray-50 rounded-lg p-1 border border-gray-100">
-                                               <button className="p-1.5 hover:bg-white hover:shadow-sm rounded-md text-gray-400 hover:text-gray-600 transition-all" title="点赞">
-                                                   <ThumbsUp size={14} />
-                                               </button>
-                                               <button className="p-1.5 hover:bg-white hover:shadow-sm rounded-md text-gray-400 hover:text-gray-600 transition-all" title="点踩">
-                                                   <ThumbsDown size={14} />
-                                               </button>
-                                                <button 
-                                                    className="p-1.5 hover:bg-white hover:shadow-sm rounded-md text-gray-400 hover:text-gray-600 transition-all ml-1" 
-                                                    title="复制"
-                                                    onClick={() => copyToClipboard(msg.content, msg.id)}
-                                                >
-                                                    {copiedId === msg.id ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
-                                               </button>
-                                               <button className="p-1.5 hover:bg-white hover:shadow-sm rounded-md text-gray-400 hover:text-gray-600 transition-all" title="重新生成">
-                                                   <RotateCw size={14} />
-                                               </button>
-                                           </div>
-                                       </div>
-                                    )}
+                                    {/* Action Bar removed */}
+
                                 </div>
                             )}
                         </div>
