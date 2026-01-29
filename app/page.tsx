@@ -3,8 +3,9 @@
 import React, { useState, useRef, useEffect, ChangeEvent, KeyboardEvent } from 'react';
 import { 
   Send, Image as ImageIcon, X, Loader2, Bot, User, 
-  PanelLeftClose, SquarePen, ThumbsUp, ThumbsDown, 
-  Copy, RotateCw, Paperclip, Mic, FileText, Check
+  PanelLeftClose, PanelLeftOpen, SquarePen, ThumbsUp, ThumbsDown, 
+  Copy, RotateCw, Paperclip, Mic, FileText, Check, ChevronDown,
+  MoreHorizontal, Pencil, Trash2
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 
@@ -18,7 +19,7 @@ interface Message {
   role: 'user' | 'assistant';
   content: string;
   imageUrl?: string;
-  citations?: Citation[]; // 模拟引用数据结构
+  citations?: Citation[];
 }
 
 interface UploadResponse {
@@ -37,70 +38,313 @@ interface DifyFileItem {
   upload_file_id: string;
 }
 
-// --- Sidebar Component ---
-const Sidebar = () => (
-  <div className="w-[260px] h-full bg-[#FAFBFF] flex flex-col border-r border-[#E5E7EB] hidden md:flex shrink-0 font-sans">
-    {/* Sidebar Header */}
-    <div className="h-16 flex items-center justify-between px-4 mt-2">
-      <div className="flex items-center gap-3">
-        <div className="w-10 h-10 bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex items-center justify-center">
-           <img src="/logo.jpg" alt="Logo" className="w-full h-full object-cover" />
+interface ChatSession {
+    id: string;
+    title: string;
+    group: string; // e.g. '今天'
+}
+
+// --- Components ---
+
+// Modal Components
+interface ModalProps {
+    isOpen: boolean;
+    onClose: () => void;
+    children: React.ReactNode;
+}
+
+const Modal = ({ isOpen, onClose, children }: ModalProps) => {
+    if (!isOpen) return null;
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] transition-opacity" onClick={onClose} />
+            <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-[480px] overflow-hidden animate-in fade-in zoom-in-95 duration-200 p-6">
+                {children}
+            </div>
         </div>
-        <span className="font-bold text-gray-800 text-lg">AI药匣子</span>
-      </div>
-      <button className="text-gray-400 hover:text-gray-600">
-        <PanelLeftClose size={20} />
-      </button>
-    </div>
+    );
+};
 
-    {/* New Chat Button */}
-    <div className="px-4 mb-6 mt-4">
-      <button className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-white hover:bg-gray-50 text-blue-600 font-medium text-sm rounded-xl border border-gray-200 shadow-sm transition-all hover:shadow">
-        <SquarePen size={18} />
-        <span>发起新对话</span>
-      </button>
-    </div>
+const RenameModal = ({ isOpen, onClose, onSave, initialName }: { isOpen: boolean, onClose: () => void, onSave: (name: string) => void, initialName: string }) => {
+    const [name, setName] = useState(initialName);
+    
+    useEffect(() => {
+        if (isOpen) setName(initialName);
+    }, [isOpen, initialName]);
 
-    {/* History List */}
-    <div className="flex-1 overflow-y-auto px-4 space-y-1">
-      <div className="px-2 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">今天</div>
-      <button className="w-full text-left px-3 py-2 bg-[#EFF4FF] text-blue-700 text-sm rounded-lg font-medium truncate border border-transparent">
-        查询药物成分
-      </button>
-      <button className="w-full text-left px-3 py-2 text-gray-600 hover:bg-gray-100 text-sm rounded-lg truncate transition-colors">
-        了解用法 + 药物
-      </button>
-    </div>
+    return (
+        <Modal isOpen={isOpen} onClose={onClose}>
+            <h3 className="text-xl font-bold text-gray-900 mb-6">重命名会话</h3>
+            <div className="mb-8">
+                <label className="block text-sm font-semibold text-gray-900 mb-2">会话名称</label>
+                <input 
+                    type="text" 
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    className="w-full bg-gray-50 border border-gray-100 focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 rounded-xl px-4 py-3 outline-none transition-all text-gray-700 text-sm"
+                    autoFocus
+                />
+            </div>
+            <div className="flex justify-end gap-3">
+                <button 
+                    onClick={onClose}
+                    className="px-5 py-2.5 text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 hover:border-gray-300 rounded-xl font-medium transition-all shadow-sm"
+                >
+                    取消
+                </button>
+                <button 
+                    onClick={() => onSave(name)}
+                    disabled={!name.trim()}
+                    className="px-5 py-2.5 bg-[#2962FF] hover:bg-blue-700 text-white rounded-xl font-medium transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                    保存
+                </button>
+            </div>
+        </Modal>
+    );
+};
 
-    {/* Sidebar Footer */}
-    {/* <div className="p-5 border-t border-gray-100 bg-[#FAFBFF]">
-      <div className="flex items-center gap-2 text-xs text-gray-400 font-medium">
-        <span>POWERED BY</span>
-        <span className="font-bold text-gray-700 font-mono tracking-tight">Dify</span>
-      </div>
-    </div> */}
-  </div>
-);
+const DeleteModal = ({ isOpen, onClose, onConfirm }: { isOpen: boolean, onClose: () => void, onConfirm: () => void }) => {
+    return (
+        <Modal isOpen={isOpen} onClose={onClose}>
+            <h3 className="text-xl font-bold text-gray-900 mb-2">删除会话</h3>
+            <p className="text-gray-500 mb-8 leading-relaxed">您确定要删除此会话吗？此操作无法撤销。</p>
+            <div className="flex justify-end gap-3">
+                <button 
+                    onClick={onClose}
+                    className="px-5 py-2.5 text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 hover:border-gray-300 rounded-xl font-medium transition-all shadow-sm"
+                >
+                    取消
+                </button>
+                <button 
+                    onClick={onConfirm}
+                    className="px-5 py-2.5 bg-red-500 hover:bg-red-600 text-white rounded-xl font-medium transition-colors shadow-sm"
+                >
+                    确认
+                </button>
+            </div>
+        </Modal>
+    );
+};
+
+// Dropdown Menu Component
+interface DropdownProps {
+    onRename: () => void;
+    onDelete: () => void;
+    onClose: () => void;
+    positionClass?: string;
+}
+
+const ActionDropdown = ({ onRename, onDelete, onClose, positionClass = "top-full right-0 mt-1" }: DropdownProps) => {
+    // Click outside listener could be added here or in parent
+    return (
+        <div className={`absolute ${positionClass} w-32 bg-white rounded-xl shadow-lg border border-gray-100 py-1 z-50 animate-in fade-in zoom-in-95 duration-100 menu-dropdown`}>
+            <button 
+                onClick={(e) => { e.stopPropagation(); onRename(); onClose(); }}
+                className="w-full text-left px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 flex items-center gap-2"
+            >
+                <Pencil size={14} />
+                <span>重命名</span>
+            </button>
+            <button 
+                onClick={(e) => { e.stopPropagation(); onDelete(); onClose(); }}
+                className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
+            >
+                <Trash2 size={14} />
+                <span>删除</span>
+            </button>
+        </div>
+    );
+};
+
+// Sidebar Component
+interface SidebarProps {
+    isOpen: boolean;
+    toggleSidebar: () => void;
+    sessions: ChatSession[];
+    activeSessionId: string | null;
+    onSelectSession: (id: string) => void;
+    onRenameSession: (id: string) => void;
+    onDeleteSession: (id: string) => void;
+}
+
+const Sidebar = ({ 
+    isOpen, 
+    toggleSidebar, 
+    sessions, 
+    activeSessionId, 
+    onSelectSession,
+    onRenameSession,
+    onDeleteSession
+}: SidebarProps) => {
+    const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+
+    const groupedSessions = sessions.reduce((acc, session) => {
+        if (!acc[session.group]) acc[session.group] = [];
+        acc[session.group].push(session);
+        return acc;
+    }, {} as Record<string, ChatSession[]>);
+
+    return (
+        <>
+            {/* Mobile Overlay */}
+            {isOpen && (
+                <div 
+                    className="md:hidden fixed inset-0 z-40 bg-black/20 backdrop-blur-sm"
+                    onClick={toggleSidebar}
+                />
+            )}
+            <div className={`
+                fixed md:static inset-y-0 left-0 z-40
+                w-[260px] h-full bg-[#FAFBFF] flex flex-col border-r border-[#E5E7EB] shrink-0 font-sans transition-transform duration-300 ease-in-out
+                ${isOpen ? 'translate-x-0' : '-translate-x-full md:hidden'}
+            `}>
+            {/* Sidebar Header */}
+            <div className="h-16 flex items-center justify-between px-4 mt-2 relative z-10">
+                <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex items-center justify-center">
+                        <img src="/logo.jpg" alt="Logo" className="w-full h-full object-cover" />
+                    </div>
+                    <span className="font-bold text-gray-800 text-lg">AI药匣子</span>
+                </div>
+                <button onClick={toggleSidebar} className="text-gray-400 hover:text-gray-600 transition-colors">
+                    <PanelLeftClose size={20} />
+                </button>
+            </div>
+
+            {/* New Chat Button */}
+            <div className="px-4 mb-6 mt-4">
+                <button className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-white hover:bg-gray-50 text-blue-600 font-medium text-sm rounded-xl border border-gray-200 shadow-sm transition-all hover:shadow">
+                    <SquarePen size={18} />
+                    <span>发起新对话</span>
+                </button>
+            </div>
+
+            {/* History List */}
+            <div className="flex-1 overflow-y-auto px-4 space-y-4 pt-2 relative z-10">
+                {/* Menu Backdrop */}
+                {openMenuId && (
+                    <div 
+                        className="fixed inset-0 z-40 bg-transparent"
+                        onClick={() => setOpenMenuId(null)}
+                    />
+                )}
+                {Object.entries(groupedSessions).map(([group, groupSessions]) => (
+                    <div key={group}>
+                        <div className="px-2 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">{group}</div>
+                        <div className="space-y-1">
+                            {groupSessions.map(session => {
+                                const isActive = activeSessionId === session.id;
+                                const isMenuOpen = openMenuId === session.id;
+                                return (
+                                    <div key={session.id} className={`relative group ${isMenuOpen ? 'z-50' : ''}`}>
+                                        <button 
+                                            onClick={() => onSelectSession(session.id)}
+                                            className={`w-full text-left px-3 py-2 text-sm rounded-lg font-medium truncate border transition-colors pr-8 ${
+                                                isActive 
+                                                ? 'bg-[#EFF4FF] text-blue-700 border-transparent' 
+                                                : 'text-gray-600 hover:bg-gray-100 border-transparent'
+                                            }`}
+                                        >
+                                            {session.title}
+                                        </button>
+                                        
+                                        {/* More Button: Visible on Hover or if Menu Open */}
+                                        <div className={`absolute right-2 top-1/2 -translate-y-1/2 ${isMenuOpen ? 'block' : 'hidden group-hover:block'}`}>
+                                            <button 
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setOpenMenuId(isMenuOpen ? null : session.id);
+                                                }}
+                                                className={`p-1 rounded-md transition-colors ${isActive ? 'text-blue-500 hover:bg-blue-200' : 'text-gray-400 hover:bg-gray-200'}`}
+                                            >
+                                                <MoreHorizontal size={16} />
+                                            </button>
+                                        </div>
+
+                                        {/* Dropdown Menu */}
+                                        {isMenuOpen && (
+                                            <ActionDropdown 
+                                                onRename={() => onRenameSession(session.id)}
+                                                onDelete={() => onDeleteSession(session.id)}
+                                                onClose={() => setOpenMenuId(null)}
+                                                positionClass="top-8 right-0"
+                                            />
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                ))}
+            </div>
+            </div>
+        </>
+    );
+};
 
 // --- Main Chat Page ---
 export default function ChatPage() {
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [input, setInput] = useState('');
-  const [messages, setMessages] = useState<Message[]>([
-      // 保持为空，或者可以预置一些对话以配合截图效果
-      // {
-      //     id: 'demo-1',
-      //     role: 'user',
-      //     content: '这个药的成份是什么',
-      //     imageUrl: 'https://via.placeholder.com/300' // 需要真实图片地址才能展示好
-      // }
+  
+  // Session State
+  const [sessions, setSessions] = useState<ChatSession[]>([
+      { id: '1', title: '查询药物成分', group: '今天' },
+      { id: '2', title: '了解用法 + 药物', group: '今天' },
+      { id: '3', title: '历史记录示例', group: '昨天' },
   ]);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>('1');
+
+  // Modal State
+  const [renameSessionId, setRenameSessionId] = useState<string | null>(null);
+  const [deleteSessionId, setDeleteSessionId] = useState<string | null>(null);
+  
+  const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   
+  // Breadcrumb dropdown state
+  const [isBreadcrumbMenuOpen, setIsBreadcrumbMenuOpen] = useState(false);
+  const breadcrumbRef = useRef<HTMLDivElement>(null);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // --- Effect: Load Messages on Session Switch ---
+  useEffect(() => {
+    if (!activeSessionId) {
+        setMessages([]);
+        return;
+    }
+    
+    // Simulate loading data
+    setIsLoading(true);
+    setMessages([]); // Clear current view
+    
+    // Mock data based on session ID
+    const timer = setTimeout(() => {
+        let initialMsgs: Message[] = [];
+        if (activeSessionId === '1') {
+             initialMsgs = [{ id: 'intro-1', role: 'assistant', content: '您好，我是AI药匣子。当前我们在【查询药物成分】会话中。请上传图片或直接提问。' }];
+        } else if (activeSessionId === '2') {
+             initialMsgs = [{ id: 'intro-2', role: 'assistant', content: '您好，这里是【了解用法 + 药物】会话。请告诉我您想了解的药物名称。' }];
+        } else if (activeSessionId === '3') {
+             initialMsgs = [
+                 { id: 'h-1', role: 'user', content: '历史记录示例：感冒灵颗粒' },
+                 { id: 'h-2', role: 'assistant', content: '感冒灵颗粒主要用于感冒引起的头痛、发热、鼻塞、流涕、咽痛。' }
+             ];
+        } else {
+             initialMsgs = [];
+        }
+        setMessages(initialMsgs);
+        setIsLoading(false);
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [activeSessionId]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -109,6 +353,42 @@ export default function ChatPage() {
   useEffect(() => {
     scrollToBottom();
   }, [messages, imagePreview, isLoading]);
+
+  // Close breadcrumb menu on outside click
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+        if (breadcrumbRef.current && !breadcrumbRef.current.contains(event.target as Node)) {
+            setIsBreadcrumbMenuOpen(false);
+        }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const activeSession = sessions.find(s => s.id === activeSessionId);
+
+  const handleSessionAction = (action: 'rename' | 'delete', id: string) => {
+      if (action === 'rename') {
+          setRenameSessionId(id);
+      } else if (action === 'delete') {
+          setDeleteSessionId(id);
+      }
+  };
+
+  const handleRenameConfirm = (newName: string) => {
+    if (renameSessionId && newName.trim()) {
+        setSessions(prev => prev.map(s => s.id === renameSessionId ? { ...s, title: newName } : s));
+    }
+    setRenameSessionId(null);
+  };
+
+  const handleDeleteConfirm = () => {
+    if (deleteSessionId) {
+        setSessions(prev => prev.filter(s => s.id !== deleteSessionId));
+        if (activeSessionId === deleteSessionId) setActiveSessionId(null);
+    }
+    setDeleteSessionId(null);
+  };
 
   const handleImageSelect = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -198,7 +478,7 @@ export default function ChatPage() {
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: currentInput, files: filesPayload }),
+        body: JSON.stringify({ query: currentInput || (currentImage ? "分析图片" : ""), files: filesPayload }),
       });
 
       if (!response.ok) throw new Error(`Chat API Error: ${response.status}`);
@@ -229,12 +509,6 @@ export default function ChatPage() {
                             )
                         );
                     } else if (data.event === 'message_end' && data.metadata && data.metadata.retriever_resources) {
-                        // 真实场景：如果有检索资源，通常在 message_end 中返回 metadata
-                        // 这里我们尝试解析一下
-                        /* 
-                           注意：Dify 的 metadata.retriever_resources 类似于：
-                           [{ "position": 1, "dataset_name": "...", "content": "..." }]
-                        */
                          const resources = data.metadata.retriever_resources;
                          if (resources && resources.length > 0) {
                              const cites = resources.map((r: any) => ({ 
@@ -270,11 +544,86 @@ export default function ChatPage() {
   return (
     <div className="flex w-full h-screen bg-[#F9FAFB] text-gray-900 font-sans overflow-hidden">
       
-      <Sidebar />
+      <Sidebar 
+        isOpen={isSidebarOpen} 
+        toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
+        sessions={sessions}
+        activeSessionId={activeSessionId}
+        onSelectSession={setActiveSessionId}
+        onRenameSession={(id) => handleSessionAction('rename', id)}
+        onDeleteSession={(id) => handleSessionAction('delete', id)}
+      />
 
       {/* Main Content Area */}
-      <main className="flex-1 flex flex-col h-full relative bg-white">
+      <main className="flex-1 flex flex-col h-full relative bg-white transition-all duration-300">
         
+        {/* Modals */}
+        <RenameModal 
+            isOpen={!!renameSessionId} 
+            onClose={() => setRenameSessionId(null)} 
+            onSave={handleRenameConfirm}
+            initialName={sessions.find(s => s.id === renameSessionId)?.title || ''}
+        />
+        <DeleteModal 
+            isOpen={!!deleteSessionId} 
+            onClose={() => setDeleteSessionId(null)} 
+            onConfirm={handleDeleteConfirm}
+        />
+
+        {/* Top Bar for Desktop - Different when collapsed/expanded */}
+        <div className="hidden md:flex items-center justify-between px-4 py-3 sticky top-0 z-20 bg-white">
+            <div className="flex items-center gap-3">
+                 {/* When closed, show Expand button and Breadcrumbs */}
+                 {!isSidebarOpen && (
+                    <div className="flex items-center gap-3 animate-in slide-in-from-left-2 duration-200">
+                        <button onClick={() => setIsSidebarOpen(true)} className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors border border-gray-200" title="Expand Sidebar">
+                             <PanelLeftOpen size={20} />
+                        </button>
+                        <div className="h-4 w-px bg-gray-200"></div>
+                        <div className="flex items-center gap-2">
+                            <div className="w-8 h-8 rounded-lg overflow-hidden border border-gray-100">
+                                <img src="/logo.jpg" alt="App" className="w-full h-full object-cover" />
+                            </div>
+                            <span className="text-gray-300">/</span>
+                            
+                            {/* Breadcrumb with Dropdown */}
+                            <div className="relative" ref={breadcrumbRef}>
+                                <div 
+                                    onClick={() => setIsBreadcrumbMenuOpen(!isBreadcrumbMenuOpen)}
+                                    className="flex items-center gap-1 cursor-pointer hover:bg-gray-50 px-2 py-1 rounded-md transition-colors select-none"
+                                >
+                                    <span className="font-semibold text-gray-700 text-sm">
+                                        {activeSession ? activeSession.title : '新对话'}
+                                    </span>
+                                    <ChevronDown size={14} className="text-gray-400" />
+                                </div>
+                                
+                                {isBreadcrumbMenuOpen && activeSessionId && (
+                                    <ActionDropdown 
+                                        onRename={() => handleSessionAction('rename', activeSessionId)}
+                                        onDelete={() => handleSessionAction('delete', activeSessionId)}
+                                        onClose={() => setIsBreadcrumbMenuOpen(false)}
+                                        positionClass="top-full left-0 mt-2"
+                                    />
+                                )}
+                             </div>
+
+                        </div>
+                        <button className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 transition-colors ml-2">
+                             <SquarePen size={18} />
+                        </button>
+                    </div>
+                 )}
+            </div>
+
+            {/* Right side actions - Always visible */}
+             <div className="flex items-center gap-2">
+                 <button title="Refresh" className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 transition-colors">
+                     <RotateCw size={18} />
+                 </button>
+             </div>
+        </div>
+
         {/* Mobile Header */}
         <div className="md:hidden flex items-center justify-between p-4 bg-white border-b border-gray-100 z-30">
            <div className="flex items-center gap-2">
@@ -286,27 +635,18 @@ export default function ChatPage() {
            <button><SquarePen size={20} className="text-gray-500"/></button>
         </div>
 
-        {/* Chat Header (Desktop Refresh Icon) */}
-        <div className="hidden md:block absolute top-4 right-4 z-20">
-             <button title="Refresh" className="p-2 text-gray-400 hover:text-gray-600 transition-colors">
-                 <RotateCw size={18} />
-             </button>
-        </div>
 
         {/* Chat Scroll Area */}
-        {/* 使用圆角容器模仿截图中的 "卡片" 感觉，如果body背景是灰色的话，这里让main背景也是灰色，中间放个白色大卡片会更像 */}
-        {/* 但由于 Sidebar 是白色/浅灰，主区域也是白色，为了区分，我们让整体背景有一点点灰，主内容区纯白 */}
-        
         <div className="flex-1 overflow-y-auto relative flex flex-col">
             
-            <div className={`p-4 md:p-8 space-y-8 max-w-3xl mx-auto w-full flex-1 ${messages.length === 0 ? 'flex items-center justify-center' : 'pt-16'}`}>
+            <div className={`p-4 md:p-8 space-y-8 max-w-3xl mx-auto w-full flex-1 ${messages.length === 0 ? 'flex items-center justify-center' : ''}`}>
                 
                 {messages.length === 0 && (
                     <div className="text-center space-y-6 opacity-0 animate-fadeIn" style={{ animation: 'fadeIn 0.5s forwards' }}>
                         <div className="inline-flex p-4 bg-white rounded-3xl shadow-sm border border-gray-100 mb-2">
                             <img src="/logo.jpg" alt="Logo" className="w-20 h-20 object-contain rounded-xl" />
                         </div>
-                        {/* 模仿截图中的空白状态，可能没有大字，只有一个干净的界面 */}
+                        {/* Empty state content */}
                     </div>
                 )}
 
@@ -320,7 +660,6 @@ export default function ChatPage() {
                         )}
 
                         <div className={`flex flex-col max-w-[85%] ${msg.role === 'user' ? 'items-end' : 'items-start w-full'}`}>
-                            
                             {/* User details: Image and Text bubbles */}
                             {msg.role === 'user' ? (
                                 <div className="flex flex-row-reverse items-start gap-3">
@@ -341,14 +680,9 @@ export default function ChatPage() {
                             ) : (
                                 /* AI Message Content */
                                 <div className="w-full">
-                                    {/* Content Bubble - Text directly on background or in bubble? Screenshot shows just text for AI usually, or subtle bubble. 
-                                        Screenshot shows AI answer: "感冒灵颗粒..." on the white background directly (no distinct bubble border usually in Dify default, but let's check).
-                                        Actually, Dify default is usually just text for AI. I will keep it clean.
-                                    */}
                                     <div className="prose prose-slate max-w-none text-gray-800 leading-7 text-[15px]">
                                         <ReactMarkdown>{msg.content}</ReactMarkdown>
                                     </div>
-                                    
                                     {/* Citations Block */}
                                     {msg.citations && msg.citations.length > 0 && (
                                         <div className="mt-5">
@@ -404,7 +738,6 @@ export default function ChatPage() {
                          <div className="flex-shrink-0 w-10 h-10 rounded-full bg-white flex items-center justify-center border border-gray-100 overflow-hidden shadow-sm">
                              <img src="/logo.jpg" alt="AI" className="w-full h-full object-cover" />
                          </div>
-                         {/* Skeleton for loading text */}
                          <div className="space-y-3 w-full max-w-lg mt-2">
                              <div className="h-4 bg-gray-100 rounded w-3/4"></div>
                              <div className="h-4 bg-gray-100 rounded w-1/2"></div>
