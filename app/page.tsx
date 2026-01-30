@@ -380,7 +380,8 @@ const VoiceInput = ({ isVoiceMode, onSend }: VoiceInputProps) => {
         }
         
         if (!isCancelling) {
-            const textToSend = fullTextRef.current.trim();
+            // 使用 currentText 而不是 fullTextRef，因为 currentText 包含临时识别结果
+            const textToSend = currentText.trim() || fullTextRef.current.trim();
             if (textToSend) {
                 onSend(textToSend);
             }
@@ -878,10 +879,12 @@ export default function ChatPage() {
     }
   };
 
-  const sendMessage = async () => {
-    if ((!input.trim() && !selectedImage) || isLoading) return;
+  // 发送消息（可选直接传入文本，用于语音输入）
+  const sendMessage = async (directText?: string) => {
+    const messageText = directText !== undefined ? directText : input;
+    if ((!messageText.trim() && !selectedImage) || isLoading) return;
 
-    const currentInput = input;
+    const currentInput = messageText;
     const currentImage = selectedImage;
     const currentImagePreview = imagePreview;
 
@@ -1248,11 +1251,7 @@ export default function ChatPage() {
                                 <VoiceInput 
                                     isVoiceMode={isVoiceMode}
                                     onSend={(text) => {
-                                        setInput(text);
-                                        setTimeout(() => {
-                                            const sendBtn = document.querySelector('[data-send-btn]') as HTMLButtonElement;
-                                            if (sendBtn) sendBtn.click();
-                                        }, 50);
+                                        sendMessage(text);
                                     }}
                                 />
                             ) : (
@@ -1299,7 +1298,7 @@ export default function ChatPage() {
                                 {/* 发送按钮：仅在文字模式下显示 */}
                                 {!isVoiceMode && (
                                     <button 
-                                        onClick={sendMessage}
+                                        onClick={() => sendMessage()}
                                         data-send-btn
                                         disabled={isLoading || (!input.trim() && !selectedImage)}
                                         className={`p-2 rounded-full transition-all duration-200 ${
