@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect, ChangeEvent, KeyboardEvent } from 'react';
+import ReactDOM from 'react-dom';
 import { 
   Send, Image as ImageIcon, X, Loader2, Bot, User, 
   PanelLeftClose, PanelLeftOpen, SquarePen, ThumbsUp, ThumbsDown, 
@@ -159,19 +160,146 @@ const CitationDrawer = ({ isOpen, onClose, citation }: { isOpen: boolean, onClos
     );
 };
 
-// Audio Recorder Component - 类似微信的长按语音输入
-interface AudioRecorderProps {
-    onTranscriptUpdate: (text: string) => void;  // 实时更新文字
-    onSend: (text: string) => void;              // 松开后发送
+// 全局录音遮罩组件 - 使用 Portal 渲染到 body
+const RecordingOverlay = ({ 
+    isRecording, 
+    currentText, 
+    isCancelling 
+}: { 
+    isRecording: boolean; 
+    currentText: string; 
+    isCancelling: boolean;
+}) => {
+    const [mounted, setMounted] = useState(false);
+
+    useEffect(() => {
+        setMounted(true);
+    }, []);
+
+    if (!mounted || !isRecording) return null;
+
+    // 使用 createPortal 渲染到 body
+    return ReactDOM.createPortal(
+        <div 
+            className="fixed inset-0 bg-black/85 flex flex-col"
+            style={{ zIndex: 99999 }}
+            onTouchMove={(e) => e.preventDefault()}
+        >
+            {/* 顶部文字显示区域 */}
+            <div className="flex-shrink-0 pt-16 px-5">
+                <div className={`w-full min-h-[140px] px-5 py-4 rounded-2xl transition-colors relative ${
+                    isCancelling ? 'bg-red-500/20 border border-red-500/30' : 'bg-white/10 border border-white/20'
+                }`}>
+                    {/* 左侧装饰条 */}
+                    <div className={`absolute left-0 top-4 bottom-4 w-1 rounded-full ${
+                        isCancelling ? 'bg-red-500' : 'bg-green-500'
+                    }`} />
+                    
+                    {/* 顶部状态提示 */}
+                    <div className="flex items-center gap-2 mb-3 pl-4">
+                        <div className={`w-2 h-2 rounded-full ${isCancelling ? 'bg-red-500' : 'bg-green-500 animate-pulse'}`} />
+                        <span className={`text-xs ${isCancelling ? 'text-red-400' : 'text-green-400'}`}>
+                            {isCancelling ? '已取消' : '正在录音...'}
+                        </span>
+                    </div>
+                    
+                    <p className={`text-lg leading-relaxed pl-4 min-h-[60px] ${
+                        isCancelling ? 'text-red-300 line-through opacity-60' : 'text-white'
+                    }`}>
+                        {currentText || <span className="text-white/40">正在聆听...</span>}
+                    </p>
+
+                    {/* 右下角波形动画 */}
+                    <div className="absolute right-4 bottom-4 flex items-end gap-[3px]">
+                        {[0, 1, 2, 3].map((i) => (
+                            <div 
+                                key={i} 
+                                className={`w-[3px] rounded-full transition-colors ${isCancelling ? 'bg-red-400' : 'bg-green-400'}`}
+                                style={{ 
+                                    height: '8px',
+                                    animation: isCancelling ? 'none' : `voiceWave 0.5s ease-in-out ${i * 0.1}s infinite alternate`
+                                }}
+                            />
+                        ))}
+                    </div>
+                </div>
+            </div>
+
+            {/* 中间空白区域 - 显示操作提示 */}
+            <div className="flex-1 flex flex-col items-center justify-center">
+                <div className={`text-center transition-all ${isCancelling ? 'scale-110' : ''}`}>
+                    <div className={`inline-flex items-center justify-center w-20 h-20 rounded-full mb-4 transition-all ${
+                        isCancelling ? 'bg-red-500' : 'bg-white/10'
+                    }`}>
+                        {isCancelling ? (
+                            <X size={40} className="text-white" />
+                        ) : (
+                            <Mic size={40} className="text-green-400" />
+                        )}
+                    </div>
+                    <p className={`text-base font-medium ${isCancelling ? 'text-red-400' : 'text-white/70'}`}>
+                        {isCancelling ? '松开取消发送' : '松开 发送'}
+                    </p>
+                </div>
+            </div>
+
+            {/* 底部取消区域提示 */}
+            <div className={`flex-shrink-0 py-8 text-center transition-colors ${
+                isCancelling ? 'bg-red-500/20' : ''
+            }`}>
+                <p className={`text-sm ${isCancelling ? 'text-red-400 font-medium' : 'text-white/40'}`}>
+                    ↑ 上滑取消
+                </p>
+            </div>
+
+            {/* 全局样式 */}
+            <style>{`
+                @keyframes voiceWave {
+                    0% { height: 8px; }
+                    100% { height: 24px; }
+                }
+            `}</style>
+        </div>,
+        document.body
+    );
+};
+
+// 语音输入组件
+interface VoiceInputProps {
+    isVoiceMode: boolean;
+    onSend: (text: string) => void;
 }
 
-const AudioRecorder = ({ onTranscriptUpdate, onSend }: AudioRecorderProps) => {
+const VoiceInput = ({ isVoiceMode, onSend }: VoiceInputProps) => {
     const [isRecording, setIsRecording] = useState(false);
     const [currentText, setCurrentText] = useState('');
+    const [isCancelling, setIsCancelling] = useState(false);
     const recognitionRef = useRef<SpeechRecognition | null>(null);
-    const fullTextRef = useRef('');  // 存储完整的转录文本
+    const fullTextRef = useRef('');
+    const startYRef = useRef(0);
 
-    const startRecording = () => {
+    // 禁用页面滚动和选择
+    useEffect(() => {
+        if (isRecording) {
+            document.body.style.overflow = 'hidden';
+            document.body.style.userSelect = 'none';
+            document.body.style.webkitUserSelect = 'none';
+        } else {
+            document.body.style.overflow = '';
+            document.body.style.userSelect = '';
+            document.body.style.webkitUserSelect = '';
+        }
+        return () => {
+            document.body.style.overflow = '';
+            document.body.style.userSelect = '';
+            document.body.style.webkitUserSelect = '';
+        };
+    }, [isRecording]);
+
+    const startRecording = (e: React.MouseEvent | React.TouchEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         
         if (!SpeechRecognition) {
@@ -179,10 +307,15 @@ const AudioRecorder = ({ onTranscriptUpdate, onSend }: AudioRecorderProps) => {
             return;
         }
 
-        // 重置文本
+        if ('touches' in e) {
+            startYRef.current = e.touches[0].clientY;
+        } else {
+            startYRef.current = e.clientY;
+        }
+
         fullTextRef.current = '';
         setCurrentText('');
-        onTranscriptUpdate('');
+        setIsCancelling(false);
 
         const recognition = new SpeechRecognition();
         recognitionRef.current = recognition;
@@ -204,15 +337,11 @@ const AudioRecorder = ({ onTranscriptUpdate, onSend }: AudioRecorderProps) => {
                 }
             }
             
-            // 累积最终结果
             if (finalTranscript) {
                 fullTextRef.current += finalTranscript;
             }
             
-            // 显示：已确认的文本 + 临时文本
-            const displayText = fullTextRef.current + interimTranscript;
-            setCurrentText(displayText);
-            onTranscriptUpdate(displayText);
+            setCurrentText(fullTextRef.current + interimTranscript);
         };
 
         recognition.onerror = (event) => {
@@ -223,81 +352,84 @@ const AudioRecorder = ({ onTranscriptUpdate, onSend }: AudioRecorderProps) => {
             setIsRecording(false);
         };
 
-        recognition.onend = () => {
-            // 不在这里处理，由 stopRecording 控制
-        };
-
         recognition.start();
         setIsRecording(true);
     };
 
-    const stopRecording = () => {
-        if (recognitionRef.current) {
-            recognitionRef.current.stop();
-            recognitionRef.current = null;
-        }
-        setIsRecording(false);
+    const handleMove = (e: React.MouseEvent | React.TouchEvent) => {
+        if (!isRecording) return;
+        e.preventDefault();
         
-        // 松开后发送
-        const textToSend = fullTextRef.current.trim();
-        if (textToSend) {
-            onSend(textToSend);
+        let currentY: number;
+        if ('touches' in e) {
+            currentY = e.touches[0].clientY;
+        } else {
+            currentY = e.clientY;
         }
         
-        // 清空状态
-        fullTextRef.current = '';
-        setCurrentText('');
-        onTranscriptUpdate('');
+        const shouldCancel = startYRef.current - currentY > 80;
+        setIsCancelling(shouldCancel);
     };
 
-    const cancelRecording = () => {
+    const stopRecording = (e: React.MouseEvent | React.TouchEvent) => {
+        e.preventDefault();
+        
         if (recognitionRef.current) {
             recognitionRef.current.stop();
             recognitionRef.current = null;
         }
+        
+        if (!isCancelling) {
+            const textToSend = fullTextRef.current.trim();
+            if (textToSend) {
+                onSend(textToSend);
+            }
+        }
+        
         setIsRecording(false);
         fullTextRef.current = '';
         setCurrentText('');
-        onTranscriptUpdate('');
+        setIsCancelling(false);
     };
+
+    if (!isVoiceMode) return null;
 
     return (
-        <div className="relative">
-            <button 
+        <>
+            {/* 按住说话按钮 */}
+            <div
                 onMouseDown={startRecording}
+                onMouseMove={handleMove}
                 onMouseUp={stopRecording}
-                onMouseLeave={isRecording ? cancelRecording : undefined}
+                onMouseLeave={(e) => isRecording && stopRecording(e)}
                 onTouchStart={startRecording}
+                onTouchMove={handleMove}
                 onTouchEnd={stopRecording}
-                className={`p-2 rounded-lg transition-all duration-200 select-none ${
+                onTouchCancel={(e) => stopRecording(e as any)}
+                onContextMenu={(e) => e.preventDefault()}
+                className={`flex-1 py-3 rounded-xl text-center font-medium transition-all cursor-pointer ${
                     isRecording 
-                    ? 'text-red-600 bg-red-50 ring-2 ring-red-100 scale-110' 
-                    : 'text-gray-400 hover:text-blue-600 hover:bg-blue-50'
+                    ? 'bg-gray-300 text-gray-700 scale-[0.98]' 
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200 active:bg-gray-300'
                 }`}
-                title="按住说话，松开发送"
+                style={{ 
+                    touchAction: 'none',
+                    WebkitTouchCallout: 'none',
+                    WebkitUserSelect: 'none',
+                    userSelect: 'none',
+                    WebkitTapHighlightColor: 'transparent'
+                }}
             >
-                <Mic size={20} className={isRecording ? 'animate-pulse' : ''} />
-            </button>
-            
-            {/* 录音中提示浮层 */}
-            {isRecording && (
-                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 w-64 animate-in fade-in slide-in-from-bottom-2 duration-200">
-                    <div className="bg-gray-900 text-white rounded-xl px-4 py-3 shadow-xl">
-                        <div className="flex items-center gap-2 mb-2">
-                            <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
-                            <span className="text-xs text-gray-300">正在聆听...</span>
-                        </div>
-                        <p className="text-sm min-h-[20px]">
-                            {currentText || <span className="text-gray-500">请说话...</span>}
-                        </p>
-                        <div className="text-xs text-gray-500 mt-2 text-center">
-                            松开发送 · 移开取消
-                        </div>
-                    </div>
-                    <div className="absolute left-1/2 -translate-x-1/2 -bottom-1.5 w-3 h-3 bg-gray-900 rotate-45" />
-                </div>
-            )}
-        </div>
+                按住 说话
+            </div>
+
+            {/* 全屏录音遮罩 - Portal 到 body */}
+            <RecordingOverlay 
+                isRecording={isRecording}
+                currentText={currentText}
+                isCancelling={isCancelling}
+            />
+        </>
     );
 };
 
@@ -466,6 +598,7 @@ const Sidebar = ({
 export default function ChatPage() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [input, setInput] = useState('');
+  const [isVoiceMode, setIsVoiceMode] = useState(false);  // 语音/文字模式切换
   
   // Session State
   const [sessions, setSessions] = useState<ChatSession[]>([]);
@@ -1090,34 +1223,64 @@ export default function ChatPage() {
                         </div>
                     )}
 
-                    <div className={`bg-white border transition-all duration-300 rounded-2xl flex flex-col shadow-[0_4px_20px_-4px_rgba(0,0,0,0.1)] ${isLoading ? 'border-gray-200 bg-gray-50' : 'border-gray-200 hover:border-blue-300 focus-within:ring-2 focus-within:ring-blue-100 focus-within:border-blue-400'}`}>
+                    <div className={`bg-white border transition-all duration-300 rounded-2xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.1)] ${isLoading ? 'border-gray-200 bg-gray-50' : 'border-gray-200 hover:border-blue-300 focus-within:ring-2 focus-within:ring-blue-100 focus-within:border-blue-400'}`}>
                         
-                        {/* 多行文本输入区域 */}
-                        <textarea
-                            value={input}
-                            onChange={(e) => setInput(e.target.value)}
-                            onKeyDown={(e) => {
-                                if (e.key === 'Enter' && !e.shiftKey) {
-                                    e.preventDefault();
-                                    sendMessage();
-                                }
-                            }}
-                            placeholder="问问 AI 药匣子..."
-                            disabled={isLoading}
-                            rows={1}
-                            className="w-full bg-transparent border-none outline-none text-gray-700 placeholder-gray-400 px-4 pt-4 pb-2 text-base resize-none min-h-[24px] max-h-[120px] overflow-y-auto"
-                            style={{ height: 'auto' }}
-                            onInput={(e) => {
-                                const target = e.target as HTMLTextAreaElement;
-                                target.style.height = 'auto';
-                                target.style.height = Math.min(target.scrollHeight, 120) + 'px';
-                            }}
-                        />
+                        {/* 输入区域：语音模式 或 文字模式 */}
+                        <div className="flex items-center gap-2 p-2">
+                            {/* 左侧：语音/键盘切换按钮 */}
+                            <button 
+                                onClick={() => setIsVoiceMode(!isVoiceMode)}
+                                className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-colors flex-shrink-0"
+                                title={isVoiceMode ? "切换到键盘输入" : "切换到语音输入"}
+                            >
+                                {isVoiceMode ? (
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <rect x="2" y="4" width="20" height="16" rx="2"/>
+                                        <path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M8 12h.01M12 12h.01M16 12h.01M7 16h10"/>
+                                    </svg>
+                                ) : (
+                                    <Mic size={20} />
+                                )}
+                            </button>
 
-                        {/* 底部工具栏 */}
-                        <div className="flex items-center justify-between px-2 pb-2 pt-1">
-                            {/* 左侧：附件按钮 */}
-                            <div className="flex items-center">
+                            {/* 中间：文字输入框 或 按住说话按钮 */}
+                            {isVoiceMode ? (
+                                <VoiceInput 
+                                    isVoiceMode={isVoiceMode}
+                                    onSend={(text) => {
+                                        setInput(text);
+                                        setTimeout(() => {
+                                            const sendBtn = document.querySelector('[data-send-btn]') as HTMLButtonElement;
+                                            if (sendBtn) sendBtn.click();
+                                        }, 50);
+                                    }}
+                                />
+                            ) : (
+                                <textarea
+                                    value={input}
+                                    onChange={(e) => setInput(e.target.value)}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter' && !e.shiftKey) {
+                                            e.preventDefault();
+                                            sendMessage();
+                                        }
+                                    }}
+                                    placeholder="问问 AI 药匣子..."
+                                    disabled={isLoading}
+                                    rows={1}
+                                    className="flex-1 bg-transparent border-none outline-none text-gray-700 placeholder-gray-400 py-2 text-base resize-none min-h-[24px] max-h-[120px] overflow-y-auto"
+                                    style={{ height: 'auto' }}
+                                    onInput={(e) => {
+                                        const target = e.target as HTMLTextAreaElement;
+                                        target.style.height = 'auto';
+                                        target.style.height = Math.min(target.scrollHeight, 120) + 'px';
+                                    }}
+                                />
+                            )}
+
+                            {/* 右侧按钮组 */}
+                            <div className="flex items-center gap-1 flex-shrink-0">
+                                {/* 附件按钮 */}
                                 <input 
                                     type="file" 
                                     accept="image/*" 
@@ -1132,32 +1295,22 @@ export default function ChatPage() {
                                 >
                                     <Plus size={20} />
                                 </button>
-                            </div>
-
-                            {/* 右侧：语音和发送按钮 */}
-                            <div className="flex items-center gap-1">
-                                <AudioRecorder 
-                                    onTranscriptUpdate={(text) => setInput(text)}
-                                    onSend={(text) => {
-                                        setInput(text);
-                                        setTimeout(() => {
-                                            const sendBtn = document.querySelector('[data-send-btn]') as HTMLButtonElement;
-                                            if (sendBtn) sendBtn.click();
-                                        }, 50);
-                                    }}
-                                />
-                                <button 
-                                    onClick={sendMessage}
-                                    data-send-btn
-                                    disabled={isLoading || (!input.trim() && !selectedImage)}
-                                    className={`p-2 rounded-full transition-all duration-200 ${
-                                        input.trim() || selectedImage 
-                                        ? 'bg-blue-600 text-white shadow-md hover:bg-blue-700' 
-                                        : 'bg-gray-100 text-gray-300 cursor-not-allowed'
-                                    }`}
-                                >
-                                    <Send size={18} />
-                                </button>
+                                
+                                {/* 发送按钮：仅在文字模式下显示 */}
+                                {!isVoiceMode && (
+                                    <button 
+                                        onClick={sendMessage}
+                                        data-send-btn
+                                        disabled={isLoading || (!input.trim() && !selectedImage)}
+                                        className={`p-2 rounded-full transition-all duration-200 ${
+                                            input.trim() || selectedImage 
+                                            ? 'bg-blue-600 text-white shadow-md hover:bg-blue-700' 
+                                            : 'bg-gray-100 text-gray-300 cursor-not-allowed'
+                                        }`}
+                                    >
+                                        <Send size={18} />
+                                    </button>
+                                )}
                             </div>
                         </div>
                     </div>
