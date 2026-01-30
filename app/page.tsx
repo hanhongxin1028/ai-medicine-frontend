@@ -635,6 +635,11 @@ export default function ChatPage() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  
+  // 使用 ref 跟踪 input 的最新值，解决生产环境中闭包捕获旧值的问题
+  const inputRef = useRef(input);
+  inputRef.current = input;
 
   // Helper to determine group based on timestamp
   const getSessionGroup = (timestamp: number) => {
@@ -933,7 +938,18 @@ export default function ChatPage() {
 
   // 发送消息（可选直接传入文本，用于语音输入）
   const sendMessage = async (directText?: string) => {
-    const messageText = directText !== undefined ? directText : input;
+    // 优先使用直接传入的文本，其次使用 ref 中的最新值，最后尝试从 DOM 直接读取
+    // 这解决了生产环境中 React 状态闭包可能捕获旧值的问题
+    let messageText: string;
+    if (directText !== undefined) {
+      messageText = directText;
+    } else {
+      // 使用 ref 获取最新值，并与 DOM 值比较，取较新的
+      const refValue = inputRef.current;
+      const domValue = textareaRef.current?.value || '';
+      messageText = domValue || refValue;
+    }
+    
     if ((!messageText.trim() && !selectedImage) || isLoading) return;
 
     const currentInput = messageText;
@@ -944,7 +960,13 @@ export default function ChatPage() {
     const currentSession = sessions.find(s => s.id === activeSessionId);
     const conversationId = currentSession?.difyConversationId;
 
+    // 清空输入状态，同时同步清空 ref 和 DOM
     setInput('');
+    inputRef.current = '';
+    if (textareaRef.current) {
+      textareaRef.current.value = '';
+      textareaRef.current.style.height = 'auto';
+    }
     setSelectedImage(null);
     setImagePreview(null);
     setIsLoading(true);
@@ -1404,8 +1426,13 @@ export default function ChatPage() {
                                 />
                             ) : (
                                 <textarea
+                                    ref={textareaRef}
                                     value={input}
-                                    onChange={(e) => setInput(e.target.value)}
+                                    onChange={(e) => {
+                                        const newValue = e.target.value;
+                                        setInput(newValue);
+                                        inputRef.current = newValue; // 同步更新 ref
+                                    }}
                                     onKeyDown={(e) => {
                                         if (e.key === 'Enter' && !e.shiftKey) {
                                             e.preventDefault();
