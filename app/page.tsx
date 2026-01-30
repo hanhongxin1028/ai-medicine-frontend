@@ -59,9 +59,9 @@ interface ModalProps {
 const Modal = ({ isOpen, onClose, children }: ModalProps) => {
     if (!isOpen) return null;
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
             <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] transition-opacity" onClick={onClose} />
-            <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-[480px] overflow-hidden animate-in fade-in zoom-in-95 duration-200 p-6">
+            <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-[480px] overflow-hidden p-6 animate-in fade-in duration-200">
                 {children}
             </div>
         </div>
@@ -84,8 +84,9 @@ const RenameModal = ({ isOpen, onClose, onSave, initialName }: { isOpen: boolean
                     type="text" 
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    className="w-full bg-gray-50 border border-gray-100 focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 rounded-xl px-4 py-3 outline-none transition-all text-gray-700 text-sm"
+                    className="w-full bg-gray-50 border border-gray-100 focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 rounded-xl px-4 py-3 outline-none transition-all text-gray-700 text-base"
                     autoFocus
+                    style={{ fontSize: '16px' }}
                 />
             </div>
             <div className="flex justify-end gap-3">
@@ -443,19 +444,31 @@ interface DropdownProps {
 }
 
 const ActionDropdown = ({ onRename, onDelete, onClose, positionClass = "top-full right-0 mt-1" }: DropdownProps) => {
-    // Click outside listener could be added here or in parent
     return (
-        <div className={`absolute ${positionClass} w-32 bg-white rounded-xl shadow-lg border border-gray-100 py-1 z-50 animate-in fade-in zoom-in-95 duration-100 menu-dropdown`}>
+        <div 
+            className={`absolute ${positionClass} w-32 bg-white rounded-xl shadow-lg border border-gray-100 py-1 z-[100] menu-dropdown`}
+            onClick={(e) => e.stopPropagation()}
+        >
             <button 
-                onClick={(e) => { e.stopPropagation(); onRename(); onClose(); }}
-                className="w-full text-left px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 flex items-center gap-2"
+                onClick={(e) => { 
+                    e.preventDefault();
+                    e.stopPropagation(); 
+                    onClose();
+                    onRename(); 
+                }}
+                className="w-full text-left px-3 py-2.5 text-sm text-gray-600 hover:bg-gray-50 active:bg-gray-100 flex items-center gap-2"
             >
                 <Pencil size={14} />
                 <span>重命名</span>
             </button>
             <button 
-                onClick={(e) => { e.stopPropagation(); onDelete(); onClose(); }}
-                className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
+                onClick={(e) => { 
+                    e.preventDefault();
+                    e.stopPropagation(); 
+                    onClose();
+                    onDelete(); 
+                }}
+                className="w-full text-left px-3 py-2.5 text-sm text-red-600 hover:bg-red-50 active:bg-red-100 flex items-center gap-2"
             >
                 <Trash2 size={14} />
                 <span>删除</span>
@@ -562,7 +575,7 @@ const Sidebar = ({
                                         </button>
                                         
                                         {/* More Button: Visible on Hover or if Menu Open */}
-                                        <div className={`absolute right-2 top-1/2 -translate-y-1/2 ${isMenuOpen ? 'block' : 'hidden group-hover:block'}`}>
+                                        <div className={`absolute right-2 top-1/2 -translate-y-1/2 ${isMenuOpen ? 'block' : 'block md:hidden md:group-hover:block'}`}>
                                             <button 
                                                 onClick={(e) => {
                                                     e.stopPropagation();
@@ -761,11 +774,14 @@ export default function ChatPage() {
   const activeSession = sessions.find(s => s.id === activeSessionId);
 
   const handleSessionAction = (action: 'rename' | 'delete', id: string) => {
-      if (action === 'rename') {
-          setRenameSessionId(id);
-      } else if (action === 'delete') {
-          setDeleteSessionId(id);
-      }
+      // 强制更新状态，确保弹窗显示
+      setTimeout(() => {
+        if (action === 'rename') {
+            setRenameSessionId(id);
+        } else if (action === 'delete') {
+            setDeleteSessionId(id);
+        }
+      }, 0);
   };
 
   const handleRenameConfirm = async (newName: string) => {
@@ -1110,11 +1126,78 @@ export default function ChatPage() {
 
         {/* Mobile Header */}
         <div className="md:hidden flex items-center justify-between p-4 bg-white border-b border-gray-100 z-30">
-           <div className="flex items-center gap-2">
+           <div className="flex items-center gap-3">
+             {/* 展开侧边栏按钮 */}
+             <button 
+                onClick={() => setIsSidebarOpen(true)} 
+                className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors"
+                title="打开会话列表"
+             >
+                <PanelLeftOpen size={20} />
+             </button>
              <div className="w-8 h-8 bg-white rounded border border-gray-200 overflow-hidden text-blue-600">
                 <img src="/logo.jpg" alt="Logo" className="w-full h-full object-cover" />
              </div>
-             <span className="font-bold">AI药匣子</span>
+             
+             {/* 手机端标题 - 可点击下拉菜单 */}
+             <div className="relative">
+                 <div 
+                    onClick={() => activeSessionId && setIsBreadcrumbMenuOpen(!isBreadcrumbMenuOpen)}
+                    className="flex items-center gap-1 font-bold select-none active:opacity-70"
+                 >
+                     <span className="truncate max-w-[150px]">
+                         {activeSession?.title || 'AI药匣子'}
+                     </span>
+                     {activeSessionId && (
+                        <ChevronDown size={16} className="text-gray-400" />
+                     )}
+                 </div>
+
+                 {/* Dropdown Menu for Mobile Header - 直接内联渲染避免组件问题 */}
+                 {isBreadcrumbMenuOpen && activeSessionId && (
+                    <div 
+                        className="absolute top-full left-0 mt-2 w-32 bg-white rounded-xl shadow-lg border border-gray-100 py-1 z-[100]"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <button 
+                            onTouchEnd={(e) => { 
+                                e.preventDefault();
+                                e.stopPropagation(); 
+                                setIsBreadcrumbMenuOpen(false);
+                                setRenameSessionId(activeSessionId);
+                            }}
+                            onClick={(e) => { 
+                                e.preventDefault();
+                                e.stopPropagation(); 
+                                setIsBreadcrumbMenuOpen(false);
+                                setRenameSessionId(activeSessionId);
+                            }}
+                            className="w-full text-left px-3 py-2.5 text-sm text-gray-600 hover:bg-gray-50 active:bg-gray-100 flex items-center gap-2"
+                        >
+                            <Pencil size={14} />
+                            <span>重命名</span>
+                        </button>
+                        <button 
+                            onTouchEnd={(e) => { 
+                                e.preventDefault();
+                                e.stopPropagation(); 
+                                setIsBreadcrumbMenuOpen(false);
+                                setDeleteSessionId(activeSessionId);
+                            }}
+                            onClick={(e) => { 
+                                e.preventDefault();
+                                e.stopPropagation(); 
+                                setIsBreadcrumbMenuOpen(false);
+                                setDeleteSessionId(activeSessionId);
+                            }}
+                            className="w-full text-left px-3 py-2.5 text-sm text-red-600 hover:bg-red-50 active:bg-red-100 flex items-center gap-2"
+                        >
+                            <Trash2 size={14} />
+                            <span>删除</span>
+                        </button>
+                    </div>
+                )}
+             </div>
            </div>
            <button onClick={handleNewChat}>
                <SquarePen size={20} className="text-gray-500"/>
