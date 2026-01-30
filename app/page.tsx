@@ -159,6 +159,81 @@ const CitationDrawer = ({ isOpen, onClose, citation }: { isOpen: boolean, onClos
     );
 };
 
+// Audio Recorder Component - 使用浏览器原生 Web Speech API
+const AudioRecorder = ({ onTranscript }: { onTranscript: (text: string) => void }) => {
+    const [isRecording, setIsRecording] = useState(false);
+    const recognitionRef = useRef<SpeechRecognition | null>(null);
+
+    const startRecording = () => {
+        // 检查浏览器是否支持 Web Speech API
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        
+        if (!SpeechRecognition) {
+            alert('您的浏览器不支持语音识别，请使用 Chrome 或 Edge 浏览器');
+            return;
+        }
+
+        const recognition = new SpeechRecognition();
+        recognitionRef.current = recognition;
+        
+        // 配置
+        recognition.continuous = true;        // 持续监听
+        recognition.interimResults = true;    // 返回临时结果
+        recognition.lang = 'zh-CN';           // 中文
+
+        recognition.onresult = (event) => {
+            let finalTranscript = '';
+            
+            for (let i = event.resultIndex; i < event.results.length; i++) {
+                const transcript = event.results[i][0].transcript;
+                if (event.results[i].isFinal) {
+                    finalTranscript += transcript;
+                }
+            }
+            
+            if (finalTranscript) {
+                onTranscript(finalTranscript);
+            }
+        };
+
+        recognition.onerror = (event) => {
+            console.error('Speech recognition error:', event.error);
+            if (event.error === 'not-allowed') {
+                alert('请允许麦克风权限');
+            }
+            setIsRecording(false);
+        };
+
+        recognition.onend = () => {
+            setIsRecording(false);
+        };
+
+        recognition.start();
+        setIsRecording(true);
+    };
+
+    const stopRecording = () => {
+        if (recognitionRef.current) {
+            recognitionRef.current.stop();
+            setIsRecording(false);
+        }
+    };
+
+    return (
+        <button 
+            onClick={isRecording ? stopRecording : startRecording}
+            className={`p-2 rounded-lg transition-all duration-200 ${
+                isRecording 
+                ? 'text-red-600 bg-red-50 ring-2 ring-red-100 animate-pulse' 
+                : 'text-gray-400 hover:text-blue-600 hover:bg-blue-50'
+            }`}
+            title={isRecording ? "停止录音" : "开始语音输入"}
+        >
+            {isRecording ? <div className="w-5 h-5 flex items-center justify-center"><div className="w-2.5 h-2.5 bg-red-600 rounded-sm" /></div> : <Mic size={20} />}
+        </button>
+    );
+};
+
 // Dropdown Menu Component
 interface DropdownProps {
     onRename: () => void;
@@ -976,9 +1051,7 @@ export default function ChatPage() {
                                 >
                                     <Paperclip size={20} />
                                 </button>
-                                <button className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
-                                    <Mic size={20} />
-                                </button>
+                                <AudioRecorder onTranscript={(text) => setInput((prev) => prev + text)} />
                             </div>
 
                             <button 
