@@ -940,23 +940,8 @@ export default function ChatPage() {
     const currentImage = selectedImage;
     const currentImagePreview = imagePreview;
 
-    // 如果没有活动会话，先创建一个新会话
-    let currentActiveSessionId = activeSessionId;
-    if (!currentActiveSessionId) {
-      const newSessionId = Date.now().toString();
-      const newSession: ChatSession = {
-        id: newSessionId,
-        title: '新对话',
-        group: '今天',
-        difyConversationId: undefined
-      };
-      setSessions(prev => [newSession, ...prev]);
-      setActiveSessionId(newSessionId);
-      currentActiveSessionId = newSessionId;
-    }
-
     // Get current session info
-    const currentSession = sessions.find(s => s.id === currentActiveSessionId);
+    const currentSession = sessions.find(s => s.id === activeSessionId);
     const conversationId = currentSession?.difyConversationId;
 
     setInput('');
@@ -1036,11 +1021,11 @@ export default function ChatPage() {
                     const data = JSON.parse(jsonStr);
 
                     // Capture conversation_id if available and not yet set
-                    if (data.conversation_id && currentActiveSessionId && !conversationId && !conversationIdCaptured) {
+                    if (data.conversation_id && activeSessionId && !conversationId && !conversationIdCaptured) {
                         conversationIdCaptured = true;
                         newConversationId = data.conversation_id;
                         setSessions(prev => prev.map(s => 
-                            s.id === currentActiveSessionId ? { ...s, difyConversationId: data.conversation_id } : s
+                            s.id === activeSessionId ? { ...s, difyConversationId: data.conversation_id } : s
                         ));
                     }
 
@@ -1074,7 +1059,7 @@ export default function ChatPage() {
                          }
                          
                          // 消息结束后，如果是新会话，获取会话信息更新标题
-                         if (newConversationId && currentActiveSessionId) {
+                         if (newConversationId && activeSessionId) {
                              try {
                                  const convRes = await fetch(`/api/conversations`);
                                  if (convRes.ok) {
@@ -1082,7 +1067,7 @@ export default function ChatPage() {
                                      const conv = convData.data?.find((c: any) => c.id === newConversationId);
                                      if (conv && conv.name) {
                                          setSessions(prev => prev.map(s => 
-                                             s.id === currentActiveSessionId ? { ...s, title: conv.name } : s
+                                             s.id === activeSessionId ? { ...s, title: conv.name } : s
                                          ));
                                      }
                                  }
