@@ -680,6 +680,14 @@ export default function ChatPage() {
 
   useEffect(() => {
       fetchSessions();
+      
+      // 页面加载时检查是否有待恢复的输入（相机拍照可能导致页面刷新）
+      const savedInput = sessionStorage.getItem('pending_input');
+      if (savedInput) {
+        setInput(savedInput);
+        // 注意：不立即清除，等待图片选择后再清除
+        // 如果用户没有选择图片就返回，保留输入内容
+      }
   }, []);
 
   // --- Effect: Load Messages on Session Switch ---
@@ -865,19 +873,42 @@ export default function ChatPage() {
         alert('请选择图片文件');
         return;
       }
-      setSelectedImage(file);
-      const output = URL.createObjectURL(file);
-      setImagePreview(output);
+      // 使用 FileReader 读取文件，确保相机拍照和图库选择行为一致
+      // 某些移动浏览器在使用相机拍照时，直接使用 URL.createObjectURL 可能会有问题
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const dataUrl = event.target?.result as string;
+        if (dataUrl) {
+          setSelectedImage(file);
+          setImagePreview(dataUrl);
+          
+          // 相机拍照返回后，尝试恢复之前保存的输入内容
+          const savedInput = sessionStorage.getItem('pending_input');
+          if (savedInput) {
+            setInput(savedInput);
+            sessionStorage.removeItem('pending_input');
+          }
+        }
+      };
+      reader.readAsDataURL(file);
     }
+    // 重置 input 值，确保同一文件可以再次选择
     if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  // 打开文件选择器前保存当前输入（防止相机拍照时页面状态丢失）
+  const handleOpenFileSelector = () => {
+    // 保存当前输入到 sessionStorage，以防相机拍照导致页面被释放
+    if (input.trim()) {
+      sessionStorage.setItem('pending_input', input);
+    }
+    fileInputRef.current?.click();
   };
 
   const removeImage = () => {
     setSelectedImage(null);
-    if (imagePreview) {
-      URL.revokeObjectURL(imagePreview);
-      setImagePreview(null);
-    }
+    setImagePreview(null);
+    // 注意：使用 dataURL 格式不需要 revokeObjectURL
   };
 
   const copyToClipboard = (text: string, id: string) => {
@@ -909,8 +940,23 @@ export default function ChatPage() {
     const currentImage = selectedImage;
     const currentImagePreview = imagePreview;
 
+    // 如果没有活动会话，先创建一个新会话
+    let currentActiveSessionId = activeSessionId;
+    if (!currentActiveSessionId) {
+      const newSessionId = Date.now().toString();
+      const newSession: ChatSession = {
+        id: newSessionId,
+        title: '新对话',
+        group: '今天',
+        difyConversationId: undefined
+      };
+      setSessions(prev => [newSession, ...prev]);
+      setActiveSessionId(newSessionId);
+      currentActiveSessionId = newSessionId;
+    }
+
     // Get current session info
-    const currentSession = sessions.find(s => s.id === activeSessionId);
+    const currentSession = sessions.find(s => s.id === currentActiveSessionId);
     const conversationId = currentSession?.difyConversationId;
 
     setInput('');
@@ -918,6 +964,9 @@ export default function ChatPage() {
     setImagePreview(null);
     setIsLoading(true);
     isSendingRef.current = true; // 标记正在发送，防止 useEffect 重新加载消息
+    
+    // 清除 sessionStorage 中保存的待发送输入
+    sessionStorage.removeItem('pending_input');
 
     const userMsgId = Date.now().toString();
     const newUserMsg: Message = {
@@ -987,11 +1036,11 @@ export default function ChatPage() {
                     const data = JSON.parse(jsonStr);
 
                     // Capture conversation_id if available and not yet set
-                    if (data.conversation_id && activeSessionId && !conversationId && !conversationIdCaptured) {
+                    if (data.conversation_id && currentActiveSessionId && !conversationId && !conversationIdCaptured) {
                         conversationIdCaptured = true;
                         newConversationId = data.conversation_id;
                         setSessions(prev => prev.map(s => 
-                            s.id === activeSessionId ? { ...s, difyConversationId: data.conversation_id } : s
+                            s.id === currentActiveSessionId ? { ...s, difyConversationId: data.conversation_id } : s
                         ));
                     }
 
@@ -1025,7 +1074,7 @@ export default function ChatPage() {
                          }
                          
                          // 消息结束后，如果是新会话，获取会话信息更新标题
-                         if (newConversationId && activeSessionId) {
+                         if (newConversationId && currentActiveSessionId) {
                              try {
                                  const convRes = await fetch(`/api/conversations`);
                                  if (convRes.ok) {
@@ -1033,7 +1082,7 @@ export default function ChatPage() {
                                      const conv = convData.data?.find((c: any) => c.id === newConversationId);
                                      if (conv && conv.name) {
                                          setSessions(prev => prev.map(s => 
-                                             s.id === activeSessionId ? { ...s, title: conv.name } : s
+                                             s.id === currentActiveSessionId ? { ...s, title: conv.name } : s
                                          ));
                                      }
                                  }
@@ -1402,7 +1451,7 @@ export default function ChatPage() {
                                     onChange={handleImageSelect}
                                 />
                                 <button 
-                                    onClick={() => fileInputRef.current?.click()}
+                                    onClick={handleOpenFileSelector}
                                     className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-colors"
                                     title="上传图片"
                                 >
