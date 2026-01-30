@@ -5,7 +5,7 @@ import {
   Send, Image as ImageIcon, X, Loader2, Bot, User, 
   PanelLeftClose, PanelLeftOpen, SquarePen, ThumbsUp, ThumbsDown, 
   Copy, RotateCw, Paperclip, Mic, FileText, Check, ChevronDown,
-  MoreHorizontal, Pencil, Trash2
+  MoreHorizontal, Pencil, Trash2, Plus
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 
@@ -159,13 +159,19 @@ const CitationDrawer = ({ isOpen, onClose, citation }: { isOpen: boolean, onClos
     );
 };
 
-// Audio Recorder Component - 使用浏览器原生 Web Speech API
-const AudioRecorder = ({ onTranscript }: { onTranscript: (text: string) => void }) => {
+// Audio Recorder Component - 类似微信的长按语音输入
+interface AudioRecorderProps {
+    onTranscriptUpdate: (text: string) => void;  // 实时更新文字
+    onSend: (text: string) => void;              // 松开后发送
+}
+
+const AudioRecorder = ({ onTranscriptUpdate, onSend }: AudioRecorderProps) => {
     const [isRecording, setIsRecording] = useState(false);
+    const [currentText, setCurrentText] = useState('');
     const recognitionRef = useRef<SpeechRecognition | null>(null);
+    const fullTextRef = useRef('');  // 存储完整的转录文本
 
     const startRecording = () => {
-        // 检查浏览器是否支持 Web Speech API
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         
         if (!SpeechRecognition) {
@@ -173,27 +179,40 @@ const AudioRecorder = ({ onTranscript }: { onTranscript: (text: string) => void 
             return;
         }
 
+        // 重置文本
+        fullTextRef.current = '';
+        setCurrentText('');
+        onTranscriptUpdate('');
+
         const recognition = new SpeechRecognition();
         recognitionRef.current = recognition;
         
-        // 配置
-        recognition.continuous = true;        // 持续监听
-        recognition.interimResults = true;    // 返回临时结果
-        recognition.lang = 'zh-CN';           // 中文
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = 'zh-CN';
 
         recognition.onresult = (event) => {
+            let interimTranscript = '';
             let finalTranscript = '';
             
             for (let i = event.resultIndex; i < event.results.length; i++) {
                 const transcript = event.results[i][0].transcript;
                 if (event.results[i].isFinal) {
                     finalTranscript += transcript;
+                } else {
+                    interimTranscript += transcript;
                 }
             }
             
+            // 累积最终结果
             if (finalTranscript) {
-                onTranscript(finalTranscript);
+                fullTextRef.current += finalTranscript;
             }
+            
+            // 显示：已确认的文本 + 临时文本
+            const displayText = fullTextRef.current + interimTranscript;
+            setCurrentText(displayText);
+            onTranscriptUpdate(displayText);
         };
 
         recognition.onerror = (event) => {
@@ -205,7 +224,7 @@ const AudioRecorder = ({ onTranscript }: { onTranscript: (text: string) => void 
         };
 
         recognition.onend = () => {
-            setIsRecording(false);
+            // 不在这里处理，由 stopRecording 控制
         };
 
         recognition.start();
@@ -215,22 +234,70 @@ const AudioRecorder = ({ onTranscript }: { onTranscript: (text: string) => void 
     const stopRecording = () => {
         if (recognitionRef.current) {
             recognitionRef.current.stop();
-            setIsRecording(false);
+            recognitionRef.current = null;
         }
+        setIsRecording(false);
+        
+        // 松开后发送
+        const textToSend = fullTextRef.current.trim();
+        if (textToSend) {
+            onSend(textToSend);
+        }
+        
+        // 清空状态
+        fullTextRef.current = '';
+        setCurrentText('');
+        onTranscriptUpdate('');
+    };
+
+    const cancelRecording = () => {
+        if (recognitionRef.current) {
+            recognitionRef.current.stop();
+            recognitionRef.current = null;
+        }
+        setIsRecording(false);
+        fullTextRef.current = '';
+        setCurrentText('');
+        onTranscriptUpdate('');
     };
 
     return (
-        <button 
-            onClick={isRecording ? stopRecording : startRecording}
-            className={`p-2 rounded-lg transition-all duration-200 ${
-                isRecording 
-                ? 'text-red-600 bg-red-50 ring-2 ring-red-100 animate-pulse' 
-                : 'text-gray-400 hover:text-blue-600 hover:bg-blue-50'
-            }`}
-            title={isRecording ? "停止录音" : "开始语音输入"}
-        >
-            {isRecording ? <div className="w-5 h-5 flex items-center justify-center"><div className="w-2.5 h-2.5 bg-red-600 rounded-sm" /></div> : <Mic size={20} />}
-        </button>
+        <div className="relative">
+            <button 
+                onMouseDown={startRecording}
+                onMouseUp={stopRecording}
+                onMouseLeave={isRecording ? cancelRecording : undefined}
+                onTouchStart={startRecording}
+                onTouchEnd={stopRecording}
+                className={`p-2 rounded-lg transition-all duration-200 select-none ${
+                    isRecording 
+                    ? 'text-red-600 bg-red-50 ring-2 ring-red-100 scale-110' 
+                    : 'text-gray-400 hover:text-blue-600 hover:bg-blue-50'
+                }`}
+                title="按住说话，松开发送"
+            >
+                <Mic size={20} className={isRecording ? 'animate-pulse' : ''} />
+            </button>
+            
+            {/* 录音中提示浮层 */}
+            {isRecording && (
+                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 w-64 animate-in fade-in slide-in-from-bottom-2 duration-200">
+                    <div className="bg-gray-900 text-white rounded-xl px-4 py-3 shadow-xl">
+                        <div className="flex items-center gap-2 mb-2">
+                            <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+                            <span className="text-xs text-gray-300">正在聆听...</span>
+                        </div>
+                        <p className="text-sm min-h-[20px]">
+                            {currentText || <span className="text-gray-500">请说话...</span>}
+                        </p>
+                        <div className="text-xs text-gray-500 mt-2 text-center">
+                            松开发送 · 移开取消
+                        </div>
+                    </div>
+                    <div className="absolute left-1/2 -translate-x-1/2 -bottom-1.5 w-3 h-3 bg-gray-900 rotate-45" />
+                </div>
+            )}
+        </div>
     );
 };
 
@@ -1025,46 +1092,73 @@ export default function ChatPage() {
 
                     <div className={`bg-white border transition-all duration-300 rounded-2xl flex flex-col shadow-[0_4px_20px_-4px_rgba(0,0,0,0.1)] ${isLoading ? 'border-gray-200 bg-gray-50' : 'border-gray-200 hover:border-blue-300 focus-within:ring-2 focus-within:ring-blue-100 focus-within:border-blue-400'}`}>
                         
-                        <input
-                            type="text"
+                        {/* 多行文本输入区域 */}
+                        <textarea
                             value={input}
                             onChange={(e) => setInput(e.target.value)}
-                            onKeyDown={handleKeyDown}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter' && !e.shiftKey) {
+                                    e.preventDefault();
+                                    sendMessage();
+                                }
+                            }}
                             placeholder="问问 AI 药匣子..."
                             disabled={isLoading}
-                            className="w-full bg-transparent border-none outline-none text-gray-700 placeholder-gray-400 px-4 py-4 text-base"
+                            rows={1}
+                            className="w-full bg-transparent border-none outline-none text-gray-700 placeholder-gray-400 px-4 pt-4 pb-2 text-base resize-none min-h-[24px] max-h-[120px] overflow-y-auto"
+                            style={{ height: 'auto' }}
+                            onInput={(e) => {
+                                const target = e.target as HTMLTextAreaElement;
+                                target.style.height = 'auto';
+                                target.style.height = Math.min(target.scrollHeight, 120) + 'px';
+                            }}
                         />
 
-                        <div className="flex items-center justify-between px-2 pb-2">
-                            <div className="flex items-center gap-1">
+                        {/* 底部工具栏 */}
+                        <div className="flex items-center justify-between px-2 pb-2 pt-1">
+                            {/* 左侧：附件按钮 */}
+                            <div className="flex items-center">
                                 <input 
-                                        type="file" 
-                                        accept="image/*" 
-                                        className="hidden" 
-                                        ref={fileInputRef} 
-                                        onChange={handleImageSelect}
+                                    type="file" 
+                                    accept="image/*" 
+                                    className="hidden" 
+                                    ref={fileInputRef} 
+                                    onChange={handleImageSelect}
                                 />
                                 <button 
-                                        onClick={() => fileInputRef.current?.click()}
-                                        className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                                        title="上传图片"
+                                    onClick={() => fileInputRef.current?.click()}
+                                    className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-colors"
+                                    title="上传图片"
                                 >
-                                    <Paperclip size={20} />
+                                    <Plus size={20} />
                                 </button>
-                                <AudioRecorder onTranscript={(text) => setInput((prev) => prev + text)} />
                             </div>
 
-                            <button 
-                                onClick={sendMessage}
-                                disabled={isLoading || (!input.trim() && !selectedImage)}
-                                className={`p-2 rounded-lg transition-all duration-200 ${
-                                    input.trim() || selectedImage 
-                                    ? 'bg-blue-600 text-white shadow-md hover:bg-blue-700 hover:shadow-lg transform hover:-translate-y-0.5' 
-                                    : 'bg-gray-100 text-gray-300 cursor-not-allowed'
-                                }`}
-                            >
-                                <Send size={18} />
-                            </button>
+                            {/* 右侧：语音和发送按钮 */}
+                            <div className="flex items-center gap-1">
+                                <AudioRecorder 
+                                    onTranscriptUpdate={(text) => setInput(text)}
+                                    onSend={(text) => {
+                                        setInput(text);
+                                        setTimeout(() => {
+                                            const sendBtn = document.querySelector('[data-send-btn]') as HTMLButtonElement;
+                                            if (sendBtn) sendBtn.click();
+                                        }, 50);
+                                    }}
+                                />
+                                <button 
+                                    onClick={sendMessage}
+                                    data-send-btn
+                                    disabled={isLoading || (!input.trim() && !selectedImage)}
+                                    className={`p-2 rounded-full transition-all duration-200 ${
+                                        input.trim() || selectedImage 
+                                        ? 'bg-blue-600 text-white shadow-md hover:bg-blue-700' 
+                                        : 'bg-gray-100 text-gray-300 cursor-not-allowed'
+                                    }`}
+                                >
+                                    <Send size={18} />
+                                </button>
+                            </div>
                         </div>
                     </div>
                     
