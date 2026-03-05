@@ -10,7 +10,7 @@ export async function POST(req: NextRequest) {
     }
 
     const API_KEY = process.env.DIFY_API_KEY;
-    const API_URL = process.env.DIFY_API_URL || 'https://api.dify.ai/v1';
+    const API_URL = process.env.DIFY_API_URL || 'http://43.99.100.154:8081/v1';
 
     if (!API_KEY) {
       return NextResponse.json({ error: 'DIFY_API_KEY not configured' }, { status: 500 });
